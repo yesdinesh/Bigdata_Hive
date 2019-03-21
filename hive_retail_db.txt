@@ -1,0 +1,33 @@
+
+**********************Internal table**********************
+create table customers_internal (customer_id int,customer_fname string, customer_lname string, customer_email string, customer_password string, customer_street string, customer_city string, customer_state string, customer_zipcode string) row format delimited fields terminated by ',' location '/user/cloudera/retail_db/customers';
+
+**********************External table**********************
+create external table orders (order_id int, order_date string, order_customer_id int, order_status string) row format delimited fields terminated by ',' location '/user/cloudera/retail_db/orders';
+
+**********************Dynamic partition table**********************
+create external table cust_part (customer_id int,customer_fname string, customer_lname string, customer_email string, customer_password string, customer_street string, customer_city string,customer_zipcode string) PARTITIONED BY (customer_state string)  row format delimited fields terminated by ',' stored as textfile  location '/user/cloudera/retail_db/cust_part';
+
+hive>insert into cust_part partition(customer_state) select customer_id,customer_fname,customer_lname,customer_email,customer_password,customer_street,customer_city,customer_zipcode,customer_state from customers_internal;
+
+**********************Static partition table**********************
+create external table cust_part_static (customer_id int,customer_fname string, customer_lname string, customer_email string, customer_password string, customer_street string, customer_city string,customer_zipcode string) PARTITIONED BY (customer_state string)  row format delimited fields terminated by ',' stored as textfile  location '/user/cloudera/retail_db/cust_part';
+
+insert into cust_part_static partition(customer_state='US') select customer_id, customer_fname, customer_lname, customer_email, customer_password, customer_street, customer_city, customer_zipcode from customers_internal;
+
+**********************Bucketing table**********************
+set hive.exec.dynamic.partition=true;
+set hive.exec.dynamic.partition.mode=nonstrict;
+set hive.exec.max.dynamic.partitions=1000;
+set hive.exec.max.dynamic.partitions.pernode=1000;
+set hive.enforce.bucketing = true;
+
+create external table cust_bucketing (customer_id int,customer_fname string, customer_lname string, customer_email string, customer_password string, customer_street string, customer_city string,customer_zipcode string) PARTITIONED BY (customer_state string) clustered by (customer_city) into 4 buckets  row format delimited fields terminated by ',' stored as textfile  location '/user/cloudera/retail_db/cust_bucketing';
+
+insert into cust_bucketing partition(customer_state) select customer_id, customer_fname, customer_lname, customer_email, customer_password, customer_street, customer_city, customer_zipcode, customer_state from customers_internal;
+
+**********************MapSideJoin**********************
+select /*+ MAPJOIN(c) */ c.customer_id, c.customer_fname, c.customer_lname, c.customer_email, c.customer_password, c.customer_street, c.customer_city, c.customer_zipcode, c.customer_state from customers_internal c join orders o on c.customer_id=o.order_customer_id limit 5;
+
+**********************SQOOP import-all-tables**********************
+sqoop import-all-tables --connect jdbc:mysql://localhost/retail_db --username root --password cloudera --warehouse-dir retail_db --autoreset-to-one-mapper --exclude-tables categories,departments,order_items,products
